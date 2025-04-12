@@ -8,6 +8,9 @@ A C++ application that displays Kick.com chat messages as an overlay for streame
 - Customizable appearance (colors, opacity, font size)
 - Adjustable message retention (number of messages and duration)
 - Draggable overlay window that stays on top of other applications
+- Click-through mode that lets you interact with applications beneath the overlay
+- Position locking to prevent accidental movement
+- Global keyboard shortcuts for toggling visibility and locking position
 - Settings are saved between sessions
 - Lightweight and low resource usage
 
@@ -43,6 +46,7 @@ A C++ application that displays Kick.com chat messages as an overlay for streame
 1. Launch the application
 2. Right-click on the overlay to open the menu
 3. Select "Connect to channel..." and enter the Kick.com channel name
+4. Adjust position and settings as needed
 
 ### Command Line Options
 
@@ -58,6 +62,22 @@ Or use the short form:
 KickChatOverlay -c YourChannelName
 ```
 
+### Click-Through Mode
+
+The click-through mode allows you to interact with applications beneath the overlay:
+
+1. Right-click the overlay and select "Click-through mode"
+2. The overlay will now allow mouse clicks to pass through to underlying windows
+3. Use keyboard shortcuts to interact with the overlay when in click-through mode
+
+### Keyboard Shortcuts
+
+Default keyboard shortcuts:
+- **Ctrl+F10**: Toggle overlay visibility
+- **Ctrl+F11**: Lock/unlock overlay position
+
+You can customize these shortcuts in the settings menu by selecting "Configure hotkeys..."
+
 ### Customization
 
 Right-click on the overlay to access the menu with the following options:
@@ -69,6 +89,9 @@ Right-click on the overlay to access the menu with the following options:
 - Change font size
 - Set maximum number of messages
 - Set message duration (how long messages stay visible)
+- Enable/disable click-through mode
+- Lock/unlock position
+- Configure keyboard shortcuts
 - Save settings
 
 ## License
