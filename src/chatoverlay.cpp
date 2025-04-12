@@ -38,6 +38,7 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     , m_messageDuration(60)
     , m_fontSize(12)
     , m_updateInterval(250) // Update display every 250ms maximum
+    , m_maxPoolSize(100)  // Maximum size of the widget pool
 {
     setupUi();
     setupContextMenu();
@@ -77,6 +78,11 @@ ChatOverlay::~ChatOverlay()
     delete m_fontSizeAction;
     delete m_saveAction;
     delete m_exitAction;
+    
+    // Clean up widget pool
+    while (!m_messageWidgetPool.isEmpty()) {
+        delete m_messageWidgetPool.dequeue();
+    }
     
     delete ui;
 }
@@ -304,18 +310,52 @@ void ChatOverlay::onUpdateDisplayTimer()
     }
 }
 
+QLabel* ChatOverlay::getMessageLabel()
+{
+    // Reuse an existing label if available, otherwise create a new one
+    if (!m_messageWidgetPool.isEmpty()) {
+        return m_messageWidgetPool.dequeue();
+    }
+    
+    return new QLabel(ui->scrollArea->widget());
+}
+
+void ChatOverlay::recycleMessageLabel(QLabel* label)
+{
+    if (!label) {
+        return;
+    }
+    
+    // Reset the label state
+    label->clear();
+    label->setParent(nullptr);  // Remove from layout
+    
+    // Add to pool if not too big
+    if (m_messageWidgetPool.size() < m_maxPoolSize) {
+        m_messageWidgetPool.enqueue(label);
+    } else {
+        delete label;  // Pool is full, just delete it
+    }
+}
+
 void ChatOverlay::updateDisplay()
 {
-    // Clear the layout
+    // Store widgets to recycle
+    QList<QLabel*> labelsToRecycle;
+    
+    // Clear the layout but keep the widgets for recycling
     QLayoutItem* item;
     while ((item = ui->scrollArea->widget()->layout()->takeAt(0)) != nullptr) {
-        delete item->widget();
+        QLabel* label = qobject_cast<QLabel*>(item->widget());
+        if (label) {
+            labelsToRecycle.append(label);
+        }
         delete item;
     }
     
-    // Add current messages - consider adding only new messages in a future optimization
+    // Add current messages
     for (const ChatMessage& msg : m_messages) {
-        QLabel* messageLabel = new QLabel(ui->scrollArea->widget());
+        QLabel* messageLabel = getMessageLabel();
         
         // Format text with HTML
         QString formattedMessage = QString("<span style='color: %1; font-weight: bold;'>%2:</span> <span style='color: %3;'>%4</span>")
@@ -332,6 +372,11 @@ void ChatOverlay::updateDisplay()
         
         // Add to layout
         ui->scrollArea->widget()->layout()->addWidget(messageLabel);
+    }
+    
+    // Recycle unused labels
+    for (QLabel* label : labelsToRecycle) {
+        recycleMessageLabel(label);
     }
     
     // Scroll to bottom

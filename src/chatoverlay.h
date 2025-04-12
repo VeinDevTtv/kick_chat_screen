@@ -8,6 +8,8 @@
 #include <QAction>
 #include "kickchatclient.h"
 #include "chatmessage.h"
+#include <QLabel>
+#include <QQueue>
 
 namespace Ui {
 class ChatOverlay;
@@ -80,10 +82,16 @@ private:
     int m_fontSize;
     int m_updateInterval;
 
+    QQueue<QLabel*> m_messageWidgetPool;
+    int m_maxPoolSize;
+
     void setupUi();
     void setupContextMenu();
     void createSettingsDialog();
     void updateDisplay();
+
+    QLabel* getMessageLabel();
+    void recycleMessageLabel(QLabel* label);
 };
 
 #endif // CHATOVERLAY_H 
