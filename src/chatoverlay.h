@@ -5,6 +5,7 @@
 #include <QList>
 #include <QTimer>
 #include <QPoint>
+#include <QAction>
 #include "kickchatclient.h"
 #include "chatmessage.h"
 
@@ -54,6 +55,18 @@ private:
     QTimer m_cleanupTimer;
     QPoint m_dragPosition;
     bool m_dragging;
+    
+    // Context menu actions
+    QAction* m_connectAction;
+    QAction* m_disconnectAction;
+    QAction* m_bgColorAction;
+    QAction* m_textColorAction;
+    QAction* m_opacityAction;
+    QAction* m_maxMsgAction;
+    QAction* m_durationAction;
+    QAction* m_fontSizeAction;
+    QAction* m_saveAction;
+    QAction* m_exitAction;
     
     // Settings
     QColor m_backgroundColor;

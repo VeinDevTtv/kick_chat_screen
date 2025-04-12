@@ -19,6 +19,16 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     : QWidget(parent)
     , ui(new Ui::ChatOverlay)
     , m_dragging(false)
+    , m_connectAction(nullptr)
+    , m_disconnectAction(nullptr)
+    , m_bgColorAction(nullptr)
+    , m_textColorAction(nullptr)
+    , m_opacityAction(nullptr)
+    , m_maxMsgAction(nullptr)
+    , m_durationAction(nullptr)
+    , m_fontSizeAction(nullptr)
+    , m_saveAction(nullptr)
+    , m_exitAction(nullptr)
     , m_backgroundColor(0, 0, 0)
     , m_textColor(255, 255, 255)
     , m_opacity(0.7f)
@@ -46,6 +56,19 @@ ChatOverlay::ChatOverlay(QWidget* parent)
 ChatOverlay::~ChatOverlay()
 {
     m_chatClient.disconnectFromChannel();
+    
+    // Clean up actions
+    delete m_connectAction;
+    delete m_disconnectAction;
+    delete m_bgColorAction;
+    delete m_textColorAction;
+    delete m_opacityAction;
+    delete m_maxMsgAction;
+    delete m_durationAction;
+    delete m_fontSizeAction;
+    delete m_saveAction;
+    delete m_exitAction;
+    
     delete ui;
 }
 
@@ -71,104 +94,109 @@ void ChatOverlay::setupUi()
 void ChatOverlay::setupContextMenu()
 {
     setContextMenuPolicy(Qt::CustomContextMenu);
+    
+    // Create actions
+    m_connectAction = new QAction("Connect to channel...", this);
+    m_disconnectAction = new QAction("Disconnect", this);
+    m_bgColorAction = new QAction("Set background color...", this);
+    m_textColorAction = new QAction("Set text color...", this);
+    m_opacityAction = new QAction("Set opacity...", this);
+    m_maxMsgAction = new QAction("Set max messages...", this);
+    m_durationAction = new QAction("Set message duration...", this);
+    m_fontSizeAction = new QAction("Set font size...", this);
+    m_saveAction = new QAction("Save settings", this);
+    m_exitAction = new QAction("Exit", this);
+    
+    // Connect action signals
+    connect(m_connectAction, &QAction::triggered, this, [this]() {
+        QString channelName = QInputDialog::getText(this, tr("Connect to Channel"),
+                                                   tr("Enter Kick.com channel name:"));
+        if (!channelName.isEmpty()) {
+            connectToChannel(channelName);
+        }
+    });
+    
+    connect(m_disconnectAction, &QAction::triggered, this, &ChatOverlay::disconnectFromChannel);
+    
+    connect(m_bgColorAction, &QAction::triggered, this, [this]() {
+        QColor color = QColorDialog::getColor(m_backgroundColor, this);
+        if (color.isValid()) {
+            setBackgroundColor(color);
+        }
+    });
+    
+    connect(m_textColorAction, &QAction::triggered, this, [this]() {
+        QColor color = QColorDialog::getColor(m_textColor, this);
+        if (color.isValid()) {
+            setTextColor(color);
+        }
+    });
+    
+    connect(m_opacityAction, &QAction::triggered, this, [this]() {
+        bool ok;
+        int opacity = QInputDialog::getInt(this, tr("Set Opacity"),
+                                       tr("Opacity (0-100):"), 
+                                       static_cast<int>(m_opacity * 100),
+                                       0, 100, 1, &ok);
+        if (ok) {
+            setBackgroundOpacity(opacity / 100.0f);
+        }
+    });
+    
+    connect(m_maxMsgAction, &QAction::triggered, this, [this]() {
+        bool ok;
+        int count = QInputDialog::getInt(this, tr("Set Maximum Messages"),
+                                     tr("Number of messages:"), 
+                                     m_maxMessages, 1, 200, 1, &ok);
+        if (ok) {
+            setMaxMessages(count);
+        }
+    });
+    
+    connect(m_durationAction, &QAction::triggered, this, [this]() {
+        bool ok;
+        int seconds = QInputDialog::getInt(this, tr("Set Message Duration"),
+                                       tr("Duration in seconds (0 for no limit):"), 
+                                       m_messageDuration, 0, 3600, 1, &ok);
+        if (ok) {
+            setMessageDuration(seconds);
+        }
+    });
+    
+    connect(m_fontSizeAction, &QAction::triggered, this, [this]() {
+        bool ok;
+        int size = QInputDialog::getInt(this, tr("Set Font Size"),
+                                    tr("Font size:"), 
+                                    m_fontSize, 8, 32, 1, &ok);
+        if (ok) {
+            setFontSize(size);
+        }
+    });
+    
+    connect(m_saveAction, &QAction::triggered, this, &ChatOverlay::onSaveSettings);
+    connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
+    
+    // Connect context menu request signal
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         QMenu contextMenu(tr("Chat Overlay Menu"), this);
         
-        // Connect actions
-        QAction connectAction("Connect to channel...", this);
-        connect(&connectAction, &QAction::triggered, this, [this]() {
-            QString channelName = QInputDialog::getText(this, tr("Connect to Channel"),
-                                                       tr("Enter Kick.com channel name:"));
-            if (!channelName.isEmpty()) {
-                connectToChannel(channelName);
-            }
-        });
-        
-        QAction disconnectAction("Disconnect", this);
-        connect(&disconnectAction, &QAction::triggered, this, &ChatOverlay::disconnectFromChannel);
-        disconnectAction.setEnabled(m_chatClient.isConnected());
-        
-        QAction bgColorAction("Set background color...", this);
-        connect(&bgColorAction, &QAction::triggered, this, [this]() {
-            QColor color = QColorDialog::getColor(m_backgroundColor, this);
-            if (color.isValid()) {
-                setBackgroundColor(color);
-            }
-        });
-        
-        QAction textColorAction("Set text color...", this);
-        connect(&textColorAction, &QAction::triggered, this, [this]() {
-            QColor color = QColorDialog::getColor(m_textColor, this);
-            if (color.isValid()) {
-                setTextColor(color);
-            }
-        });
-        
-        QAction opacityAction("Set opacity...", this);
-        connect(&opacityAction, &QAction::triggered, this, [this]() {
-            bool ok;
-            int opacity = QInputDialog::getInt(this, tr("Set Opacity"),
-                                           tr("Opacity (0-100):"), 
-                                           static_cast<int>(m_opacity * 100),
-                                           0, 100, 1, &ok);
-            if (ok) {
-                setBackgroundOpacity(opacity / 100.0f);
-            }
-        });
-        
-        QAction maxMsgAction("Set max messages...", this);
-        connect(&maxMsgAction, &QAction::triggered, this, [this]() {
-            bool ok;
-            int count = QInputDialog::getInt(this, tr("Set Maximum Messages"),
-                                         tr("Number of messages:"), 
-                                         m_maxMessages, 1, 200, 1, &ok);
-            if (ok) {
-                setMaxMessages(count);
-            }
-        });
-        
-        QAction durationAction("Set message duration...", this);
-        connect(&durationAction, &QAction::triggered, this, [this]() {
-            bool ok;
-            int seconds = QInputDialog::getInt(this, tr("Set Message Duration"),
-                                           tr("Duration in seconds (0 for no limit):"), 
-                                           m_messageDuration, 0, 3600, 1, &ok);
-            if (ok) {
-                setMessageDuration(seconds);
-            }
-        });
-        
-        QAction fontSizeAction("Set font size...", this);
-        connect(&fontSizeAction, &QAction::triggered, this, [this]() {
-            bool ok;
-            int size = QInputDialog::getInt(this, tr("Set Font Size"),
-                                        tr("Font size:"), 
-                                        m_fontSize, 8, 32, 1, &ok);
-            if (ok) {
-                setFontSize(size);
-            }
-        });
-        
-        QAction saveAction("Save settings", this);
-        connect(&saveAction, &QAction::triggered, this, &ChatOverlay::onSaveSettings);
-        
-        QAction exitAction("Exit", this);
-        connect(&exitAction, &QAction::triggered, this, &QWidget::close);
+        // Update disconnect action enabled state
+        m_disconnectAction->setEnabled(m_chatClient.isConnected());
         
         // Add actions to menu
-        contextMenu.addAction(&connectAction);
-        contextMenu.addAction(&disconnectAction);
+        contextMenu.addAction(m_connectAction);
+        contextMenu.addAction(m_disconnectAction);
         contextMenu.addSeparator();
-        contextMenu.addAction(&bgColorAction);
-        contextMenu.addAction(&textColorAction);
-        contextMenu.addAction(&opacityAction);
-        contextMenu.addAction(&fontSizeAction);
-        contextMenu.addAction(&maxMsgAction);
-        contextMenu.addAction(&durationAction);
+        contextMenu.addAction(m_bgColorAction);
+        contextMenu.addAction(m_textColorAction);
+        contextMenu.addAction(m_opacityAction);
+        contextMenu.addAction(m_fontSizeAction);
+        contextMenu.addAction(m_maxMsgAction);
+        contextMenu.addAction(m_durationAction);
         contextMenu.addSeparator();
-        contextMenu.addAction(&saveAction);
+        contextMenu.addAction(m_saveAction);
         contextMenu.addSeparator();
-        contextMenu.addAction(&exitAction);
+        contextMenu.addAction(m_exitAction);
         
         // Show the menu
         contextMenu.exec(mapToGlobal(pos));
