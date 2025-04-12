@@ -47,14 +47,17 @@ private slots:
     void onCleanupTimer();
     void onSaveSettings();
     void onLoadSettings();
+    void onUpdateDisplayTimer();
 
 private:
     Ui::ChatOverlay* ui;
     KickChatClient m_chatClient;
     QList<ChatMessage> m_messages;
     QTimer m_cleanupTimer;
+    QTimer m_updateDisplayTimer;
     QPoint m_dragPosition;
     bool m_dragging;
+    bool m_displayNeedsUpdate;
     
     // Context menu actions
     QAction* m_connectAction;
@@ -75,6 +78,7 @@ private:
     int m_maxMessages;
     int m_messageDuration;
     int m_fontSize;
+    int m_updateInterval;
 
     void setupUi();
     void setupContextMenu();

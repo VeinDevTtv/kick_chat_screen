@@ -14,11 +14,13 @@
 #include <QDateTime>
 #include <QScreen>
 #include <QApplication>
+#include <QTimer>
 
 ChatOverlay::ChatOverlay(QWidget* parent)
     : QWidget(parent)
     , ui(new Ui::ChatOverlay)
     , m_dragging(false)
+    , m_displayNeedsUpdate(false)
     , m_connectAction(nullptr)
     , m_disconnectAction(nullptr)
     , m_bgColorAction(nullptr)
@@ -35,6 +37,7 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     , m_maxMessages(50)
     , m_messageDuration(60)
     , m_fontSize(12)
+    , m_updateInterval(250) // Update display every 250ms maximum
 {
     setupUi();
     setupContextMenu();
@@ -48,6 +51,12 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     // Setup cleanup timer
     connect(&m_cleanupTimer, &QTimer::timeout, this, &ChatOverlay::onCleanupTimer);
     m_cleanupTimer.start(10000); // Check for old messages every 10 seconds
+    
+    // Setup display update timer
+    connect(&m_updateDisplayTimer, &QTimer::timeout, this, &ChatOverlay::onUpdateDisplayTimer);
+    m_updateDisplayTimer.setSingleShot(false);
+    m_updateDisplayTimer.setInterval(m_updateInterval);
+    m_updateDisplayTimer.start();
     
     // Load saved settings
     onLoadSettings();
@@ -282,8 +291,17 @@ void ChatOverlay::onMessageReceived(const ChatMessage& message)
         m_messages.removeFirst();
     }
     
-    // Update display
-    updateDisplay();
+    // Mark display for update but don't update immediately
+    // This prevents too many UI updates when messages come in rapidly
+    m_displayNeedsUpdate = true;
+}
+
+void ChatOverlay::onUpdateDisplayTimer()
+{
+    if (m_displayNeedsUpdate) {
+        updateDisplay();
+        m_displayNeedsUpdate = false;
+    }
 }
 
 void ChatOverlay::updateDisplay()
@@ -295,7 +313,7 @@ void ChatOverlay::updateDisplay()
         delete item;
     }
     
-    // Add current messages
+    // Add current messages - consider adding only new messages in a future optimization
     for (const ChatMessage& msg : m_messages) {
         QLabel* messageLabel = new QLabel(ui->scrollArea->widget());
         
@@ -340,7 +358,7 @@ void ChatOverlay::onCleanupTimer()
     
     // Update the display if messages were removed
     if (messagesRemoved) {
-        updateDisplay();
+        m_displayNeedsUpdate = true;
     }
 }
 
@@ -353,7 +371,8 @@ void ChatOverlay::setBackgroundColor(const QColor& color)
 void ChatOverlay::setTextColor(const QColor& color)
 {
     m_textColor = color;
-    updateDisplay();
+    updateDisplay(); // User action, update immediately
+    m_displayNeedsUpdate = false;
 }
 
 void ChatOverlay::setBackgroundOpacity(float opacity)
