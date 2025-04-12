@@ -6,10 +6,12 @@
 #include <QTimer>
 #include <QPoint>
 #include <QAction>
-#include "kickchatclient.h"
-#include "chatmessage.h"
 #include <QLabel>
 #include <QQueue>
+#include <QKeySequence>
+#include <QShortcut>
+#include "kickchatclient.h"
+#include "chatmessage.h"
 
 namespace Ui {
 class ChatOverlay;
@@ -33,6 +35,9 @@ public:
     void setMessageDuration(int seconds);
     void setFontSize(int size);
     void setPosition(const QPoint& position);
+    void setClickThrough(bool enabled);
+    void setToggleHotkeySequence(const QKeySequence& sequence);
+    void setLockPositionHotkeySequence(const QKeySequence& sequence);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -40,6 +45,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
 private slots:
     void onMessageReceived(const ChatMessage& message);
@@ -50,6 +56,9 @@ private slots:
     void onSaveSettings();
     void onLoadSettings();
     void onUpdateDisplayTimer();
+    void toggleVisibility();
+    void toggleLockPosition();
+    void toggleClickThrough();
 
 private:
     Ui::ChatOverlay* ui;
@@ -60,6 +69,14 @@ private:
     QPoint m_dragPosition;
     bool m_dragging;
     bool m_displayNeedsUpdate;
+    bool m_clickThroughEnabled;
+    bool m_positionLocked;
+    
+    // Keyboard shortcuts
+    QShortcut* m_toggleVisibilityShortcut;
+    QShortcut* m_lockPositionShortcut;
+    QKeySequence m_toggleVisibilitySequence;
+    QKeySequence m_lockPositionSequence;
     
     // Context menu actions
     QAction* m_connectAction;
@@ -72,6 +89,9 @@ private:
     QAction* m_fontSizeAction;
     QAction* m_saveAction;
     QAction* m_exitAction;
+    QAction* m_clickThroughAction;
+    QAction* m_lockPositionAction;
+    QAction* m_setHotkeyAction;
     
     // Settings
     QColor m_backgroundColor;
@@ -87,11 +107,15 @@ private:
 
     void setupUi();
     void setupContextMenu();
+    void setupShortcuts();
     void createSettingsDialog();
     void updateDisplay();
+    void updateWindowFlags();
 
     QLabel* getMessageLabel();
     void recycleMessageLabel(QLabel* label);
+    
+    void showHotkeyDialog();
 };
 
 #endif // CHATOVERLAY_H 

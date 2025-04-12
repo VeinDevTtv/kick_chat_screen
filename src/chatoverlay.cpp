@@ -15,12 +15,25 @@
 #include <QScreen>
 #include <QApplication>
 #include <QTimer>
+#include <QKeySequenceEdit>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 ChatOverlay::ChatOverlay(QWidget* parent)
     : QWidget(parent)
     , ui(new Ui::ChatOverlay)
     , m_dragging(false)
     , m_displayNeedsUpdate(false)
+    , m_clickThroughEnabled(false)
+    , m_positionLocked(false)
+    , m_toggleVisibilityShortcut(nullptr)
+    , m_lockPositionShortcut(nullptr)
+    , m_toggleVisibilitySequence(Qt::CTRL + Qt::Key_F10)
+    , m_lockPositionSequence(Qt::CTRL + Qt::Key_F11)
     , m_connectAction(nullptr)
     , m_disconnectAction(nullptr)
     , m_bgColorAction(nullptr)
@@ -31,6 +44,9 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     , m_fontSizeAction(nullptr)
     , m_saveAction(nullptr)
     , m_exitAction(nullptr)
+    , m_clickThroughAction(nullptr)
+    , m_lockPositionAction(nullptr)
+    , m_setHotkeyAction(nullptr)
     , m_backgroundColor(0, 0, 0)
     , m_textColor(255, 255, 255)
     , m_opacity(0.7f)
@@ -42,6 +58,7 @@ ChatOverlay::ChatOverlay(QWidget* parent)
 {
     setupUi();
     setupContextMenu();
+    setupShortcuts();
     
     // Connect to chat client signals
     connect(&m_chatClient, &KickChatClient::messageReceived, this, &ChatOverlay::onMessageReceived);
@@ -78,6 +95,13 @@ ChatOverlay::~ChatOverlay()
     delete m_fontSizeAction;
     delete m_saveAction;
     delete m_exitAction;
+    delete m_clickThroughAction;
+    delete m_lockPositionAction;
+    delete m_setHotkeyAction;
+    
+    // Clean up shortcuts
+    delete m_toggleVisibilityShortcut;
+    delete m_lockPositionShortcut;
     
     // Clean up widget pool
     while (!m_messageWidgetPool.isEmpty()) {
@@ -121,6 +145,12 @@ void ChatOverlay::setupContextMenu()
     m_fontSizeAction = new QAction("Set font size...", this);
     m_saveAction = new QAction("Save settings", this);
     m_exitAction = new QAction("Exit", this);
+    m_clickThroughAction = new QAction("Click-through mode", this);
+    m_lockPositionAction = new QAction("Lock position", this);
+    m_setHotkeyAction = new QAction("Configure hotkeys...", this);
+    
+    m_clickThroughAction->setCheckable(true);
+    m_lockPositionAction->setCheckable(true);
     
     // Connect action signals
     connect(m_connectAction, &QAction::triggered, this, [this]() {
@@ -191,54 +221,145 @@ void ChatOverlay::setupContextMenu()
     connect(m_saveAction, &QAction::triggered, this, &ChatOverlay::onSaveSettings);
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
     
+    connect(m_clickThroughAction, &QAction::triggered, this, &ChatOverlay::toggleClickThrough);
+    connect(m_lockPositionAction, &QAction::triggered, this, &ChatOverlay::toggleLockPosition);
+    connect(m_setHotkeyAction, &QAction::triggered, this, &ChatOverlay::showHotkeyDialog);
+    
     // Connect context menu request signal
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
-        QMenu contextMenu(tr("Chat Overlay Menu"), this);
-        
-        // Update disconnect action enabled state
-        m_disconnectAction->setEnabled(m_chatClient.isConnected());
-        
-        // Add actions to menu
-        contextMenu.addAction(m_connectAction);
-        contextMenu.addAction(m_disconnectAction);
-        contextMenu.addSeparator();
-        contextMenu.addAction(m_bgColorAction);
-        contextMenu.addAction(m_textColorAction);
-        contextMenu.addAction(m_opacityAction);
-        contextMenu.addAction(m_fontSizeAction);
-        contextMenu.addAction(m_maxMsgAction);
-        contextMenu.addAction(m_durationAction);
-        contextMenu.addSeparator();
-        contextMenu.addAction(m_saveAction);
-        contextMenu.addSeparator();
-        contextMenu.addAction(m_exitAction);
-        
-        // Show the menu
-        contextMenu.exec(mapToGlobal(pos));
+        // Only show context menu if position is not locked
+        if (!m_positionLocked || !m_clickThroughEnabled) {
+            QMenu contextMenu(tr("Chat Overlay Menu"), this);
+            
+            // Update action states
+            m_disconnectAction->setEnabled(m_chatClient.isConnected());
+            m_clickThroughAction->setChecked(m_clickThroughEnabled);
+            m_lockPositionAction->setChecked(m_positionLocked);
+            
+            // Add actions to menu
+            contextMenu.addAction(m_connectAction);
+            contextMenu.addAction(m_disconnectAction);
+            contextMenu.addSeparator();
+            contextMenu.addAction(m_bgColorAction);
+            contextMenu.addAction(m_textColorAction);
+            contextMenu.addAction(m_opacityAction);
+            contextMenu.addAction(m_fontSizeAction);
+            contextMenu.addAction(m_maxMsgAction);
+            contextMenu.addAction(m_durationAction);
+            contextMenu.addSeparator();
+            contextMenu.addAction(m_clickThroughAction);
+            contextMenu.addAction(m_lockPositionAction);
+            contextMenu.addAction(m_setHotkeyAction);
+            contextMenu.addSeparator();
+            contextMenu.addAction(m_saveAction);
+            contextMenu.addSeparator();
+            contextMenu.addAction(m_exitAction);
+            
+            // Show the menu
+            contextMenu.exec(mapToGlobal(pos));
+        }
     });
 }
 
-void ChatOverlay::paintEvent(QPaintEvent* event)
+void ChatOverlay::setupShortcuts()
 {
-    Q_UNUSED(event);
+    // Create global shortcuts
+    m_toggleVisibilityShortcut = new QShortcut(m_toggleVisibilitySequence, this);
+    m_lockPositionShortcut = new QShortcut(m_lockPositionSequence, this);
     
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
+    // Connect shortcuts
+    connect(m_toggleVisibilityShortcut, &QShortcut::activated, this, &ChatOverlay::toggleVisibility);
+    connect(m_lockPositionShortcut, &QShortcut::activated, this, &ChatOverlay::toggleLockPosition);
+}
+
+void ChatOverlay::showHotkeyDialog()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Configure Hotkeys"));
     
-    // Draw background with opacity
-    QColor bgColor = m_backgroundColor;
-    bgColor.setAlphaF(m_opacity);
-    painter.setBrush(bgColor);
-    painter.setPen(Qt::NoPen);
-    painter.drawRoundedRect(rect(), 10, 10);
+    QFormLayout* layout = new QFormLayout(&dialog);
     
-    // Let Qt handle the widget painting
-    QWidget::paintEvent(event);
+    QKeySequenceEdit* toggleEdit = new QKeySequenceEdit(m_toggleVisibilitySequence, &dialog);
+    QKeySequenceEdit* lockEdit = new QKeySequenceEdit(m_lockPositionSequence, &dialog);
+    
+    layout->addRow(tr("Toggle visibility:"), toggleEdit);
+    layout->addRow(tr("Lock/unlock position:"), lockEdit);
+    
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addRow(buttons);
+    
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    
+    if (dialog.exec() == QDialog::Accepted) {
+        // Update hotkeys
+        setToggleHotkeySequence(toggleEdit->keySequence());
+        setLockPositionHotkeySequence(lockEdit->keySequence());
+    }
+}
+
+void ChatOverlay::setToggleHotkeySequence(const QKeySequence& sequence)
+{
+    if (!sequence.isEmpty()) {
+        m_toggleVisibilitySequence = sequence;
+        m_toggleVisibilityShortcut->setKey(sequence);
+    }
+}
+
+void ChatOverlay::setLockPositionHotkeySequence(const QKeySequence& sequence)
+{
+    if (!sequence.isEmpty()) {
+        m_lockPositionSequence = sequence;
+        m_lockPositionShortcut->setKey(sequence);
+    }
+}
+
+void ChatOverlay::toggleVisibility()
+{
+    setVisible(!isVisible());
+}
+
+void ChatOverlay::toggleLockPosition()
+{
+    m_positionLocked = !m_positionLocked;
+    m_lockPositionAction->setChecked(m_positionLocked);
+}
+
+void ChatOverlay::toggleClickThrough()
+{
+    m_clickThroughEnabled = !m_clickThroughEnabled;
+    m_clickThroughAction->setChecked(m_clickThroughEnabled);
+    updateWindowFlags();
+}
+
+void ChatOverlay::setClickThrough(bool enabled)
+{
+    if (m_clickThroughEnabled != enabled) {
+        m_clickThroughEnabled = enabled;
+        m_clickThroughAction->setChecked(enabled);
+        updateWindowFlags();
+    }
+}
+
+void ChatOverlay::updateWindowFlags()
+{
+#ifdef Q_OS_WIN
+    // Get window handle
+    HWND hwnd = (HWND)this->winId();
+    
+    if (m_clickThroughEnabled) {
+        // Make the window click-through
+        SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+    } else {
+        // Make the window normal (not click-through)
+        SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) & ~WS_EX_TRANSPARENT);
+    }
+#endif
 }
 
 void ChatOverlay::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton) {
+    if (event->button() == Qt::LeftButton && !m_positionLocked) {
         m_dragging = true;
         m_dragPosition = event->pos();
     }
@@ -247,7 +368,7 @@ void ChatOverlay::mousePressEvent(QMouseEvent* event)
 
 void ChatOverlay::mouseMoveEvent(QMouseEvent* event)
 {
-    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+    if (m_dragging && (event->buttons() & Qt::LeftButton) && !m_positionLocked) {
         move(event->globalPosition().toPoint() - m_dragPosition);
     }
     QWidget::mouseMoveEvent(event);
@@ -480,6 +601,10 @@ void ChatOverlay::onSaveSettings()
     settings.setValue("messageDuration", m_messageDuration);
     settings.setValue("fontSize", m_fontSize);
     settings.setValue("position", pos());
+    settings.setValue("clickThroughEnabled", m_clickThroughEnabled);
+    settings.setValue("positionLocked", m_positionLocked);
+    settings.setValue("toggleVisibilitySequence", m_toggleVisibilitySequence.toString());
+    settings.setValue("lockPositionSequence", m_lockPositionSequence.toString());
     
     QMessageBox::information(this, tr("Settings Saved"), tr("Your settings have been saved."));
 }
@@ -515,4 +640,41 @@ void ChatOverlay::onLoadSettings()
     if (settings.contains("position")) {
         setPosition(settings.value("position").toPoint());
     }
+    
+    if (settings.contains("clickThroughEnabled")) {
+        setClickThrough(settings.contains("clickThroughEnabled"));
+    }
+    
+    if (settings.contains("positionLocked")) {
+        m_positionLocked = settings.value("positionLocked").toBool();
+        m_lockPositionAction->setChecked(m_positionLocked);
+    }
+    
+    if (settings.contains("toggleVisibilitySequence")) {
+        QString seqStr = settings.value("toggleVisibilitySequence").toString();
+        setToggleHotkeySequence(QKeySequence(seqStr));
+    }
+    
+    if (settings.contains("lockPositionSequence")) {
+        QString seqStr = settings.value("lockPositionSequence").toString();
+        setLockPositionHotkeySequence(QKeySequence(seqStr));
+    }
+}
+
+void ChatOverlay::paintEvent(QPaintEvent* event)
+{
+    Q_UNUSED(event);
+    
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // Draw background with opacity
+    QColor bgColor = m_backgroundColor;
+    bgColor.setAlphaF(m_opacity);
+    painter.setBrush(bgColor);
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(rect(), 10, 10);
+    
+    // Let Qt handle the widget painting
+    QWidget::paintEvent(event);
 } 
