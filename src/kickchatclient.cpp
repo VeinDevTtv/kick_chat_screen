@@ -74,8 +74,10 @@ void KickChatClient::connectWebSocketDirect()
 {
     qDebug() << "Connecting to Kick WebSocket directly";
     
-    // Connect directly to Kick's chat WebSocket server
-    QUrl url("wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.4.0");
+    // Connect directly to Kick's chat WebSocket server with the correct cluster
+    // Try multiple possible cluster options since the error shows cluster issues
+    // Kick might use mt1 instead of us2
+    QUrl url("wss://ws-mt1.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.4.0&cluster=mt1");
     
     qDebug() << "WebSocket URL:" << url.toString();
     
