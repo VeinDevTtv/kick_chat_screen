@@ -74,10 +74,9 @@ void KickChatClient::connectWebSocketDirect()
 {
     qDebug() << "Connecting to Kick WebSocket directly";
     
-    // Connect directly to Kick's chat WebSocket server with the correct cluster
-    // Try multiple possible cluster options since the error shows cluster issues
-    // Kick might use mt1 instead of us2
-    QUrl url("wss://ws-mt1.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.4.0&cluster=mt1");
+    // Try connecting directly to Kick's WebSocket server
+    // Recent information suggests Kick uses a different app key
+    QUrl url("wss://ws.pusherapp.com/app/4c173a9853be5f26bde9?protocol=7&client=js&version=7.4.0");
     
     qDebug() << "WebSocket URL:" << url.toString();
     
@@ -97,7 +96,7 @@ void KickChatClient::onConnected()
     subscribeMsg["event"] = "pusher:subscribe";
     
     QJsonObject data;
-    data["channel"] = QString("chatrooms.%1.v2").arg(m_channelName);
+    data["channel"] = QString("channel-%1").arg(m_channelName);
     subscribeMsg["data"] = data;
     
     QString message = QJsonDocument(subscribeMsg).toJson(QJsonDocument::Compact);
@@ -182,7 +181,7 @@ void KickChatClient::processMessage(const QJsonDocument& jsonDoc)
         subscribeMsg["event"] = "pusher:subscribe";
         
         QJsonObject data;
-        data["channel"] = QString("chatrooms.%1.v2").arg(m_channelName);
+        data["channel"] = QString("channel-%1").arg(m_channelName);
         subscribeMsg["data"] = data;
         
         QString message = QJsonDocument(subscribeMsg).toJson(QJsonDocument::Compact);
