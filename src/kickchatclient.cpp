@@ -8,6 +8,8 @@
 
 KickChatClient::KickChatClient(QObject* parent)
     : QObject(parent)
+    , m_reconnectAttempts(0)
+    , m_maxReconnectAttempts(5)
 {
     // Connect WebSocket signals
     connect(&m_webSocket, &QWebSocket::connected, this, &KickChatClient::onConnected);
@@ -19,6 +21,10 @@ KickChatClient::KickChatClient(QObject* parent)
     // Setup ping timer for keeping connection alive
     connect(&m_pingTimer, &QTimer::timeout, this, &KickChatClient::onPingTimerTimeout);
     m_pingTimer.setInterval(30000); // 30 seconds
+    
+    // Setup reconnect timer
+    connect(&m_reconnectTimer, &QTimer::timeout, this, &KickChatClient::onReconnectTimer);
+    m_reconnectTimer.setSingleShot(true);
 }
 
 KickChatClient::~KickChatClient()
@@ -33,12 +39,18 @@ void KickChatClient::connectToChannel(const QString& channelName)
         return;
     }
     
+    // Reset reconnect attempts when connecting to a new channel
+    m_reconnectAttempts = 0;
+    
     m_channelName = channelName;
     fetchChannelInfo(channelName);
 }
 
 void KickChatClient::disconnectFromChannel()
 {
+    // Stop reconnect attempts
+    m_reconnectTimer.stop();
+    
     if (m_webSocket.isValid()) {
         m_webSocket.close();
     }
@@ -58,6 +70,10 @@ void KickChatClient::fetchChannelInfo(const QString& channelName)
     QUrl url("https://kick.com/api/v1/channels/" + channelName);
     QNetworkRequest request(url);
     
+    // Set a user agent to avoid potential blocks
+    request.setHeader(QNetworkRequest::UserAgentHeader, 
+                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+    
     // Send the request
     QNetworkReply* reply = m_networkManager.get(request);
     connect(reply, &QNetworkReply::finished, [this, reply]() {
@@ -71,6 +87,7 @@ void KickChatClient::onChannelInfoReceived(QNetworkReply* reply)
     
     if (reply->error() != QNetworkReply::NoError) {
         emit error("Failed to get channel info: " + reply->errorString());
+        startReconnectTimer();
         return;
     }
     
@@ -84,6 +101,7 @@ void KickChatClient::onChannelInfoReceived(QNetworkReply* reply)
         connectWebSocket();
     } else {
         emit error("Failed to get channel ID: Invalid channel data");
+        startReconnectTimer();
     }
 }
 
@@ -109,6 +127,10 @@ void KickChatClient::connectWebSocket()
 
 void KickChatClient::onConnected()
 {
+    // Reset reconnect counter on successful connection
+    m_reconnectAttempts = 0;
+    m_reconnectTimer.stop();
+    
     // Subscribe to the channel chat after connection
     QJsonObject subscribeMsg;
     subscribeMsg["event"] = "pusher:subscribe";
@@ -129,6 +151,11 @@ void KickChatClient::onDisconnected()
 {
     m_pingTimer.stop();
     emit disconnected();
+    
+    // Try to reconnect if we still have a channel name
+    if (!m_channelName.isEmpty()) {
+        startReconnectTimer();
+    }
 }
 
 void KickChatClient::onTextMessageReceived(const QString& message)
@@ -177,6 +204,11 @@ void KickChatClient::processMessage(const QJsonDocument& jsonDoc)
 void KickChatClient::onError(QAbstractSocket::SocketError error)
 {
     emit this->error("WebSocket error: " + m_webSocket.errorString());
+    
+    // Try to reconnect after an error
+    if (!m_channelName.isEmpty()) {
+        startReconnectTimer();
+    }
 }
 
 void KickChatClient::onPingTimerTimeout()
@@ -188,5 +220,29 @@ void KickChatClient::onPingTimerTimeout()
         pingMsg["data"] = QJsonObject();
         
         m_webSocket.sendTextMessage(QJsonDocument(pingMsg).toJson(QJsonDocument::Compact));
+    }
+}
+
+void KickChatClient::startReconnectTimer()
+{
+    // Don't try to reconnect if we've reached the maximum attempts
+    if (m_reconnectAttempts >= m_maxReconnectAttempts) {
+        emit error("Maximum reconnection attempts reached. Please try again later.");
+        return;
+    }
+    
+    // Use exponential backoff for reconnect (1s, 2s, 4s, 8s, etc)
+    int delay = 1000 * (1 << m_reconnectAttempts);
+    m_reconnectTimer.setInterval(delay);
+    m_reconnectTimer.start();
+    m_reconnectAttempts++;
+    
+    emit error(QString("Connection lost. Attempting to reconnect in %1 seconds...").arg(delay / 1000));
+}
+
+void KickChatClient::onReconnectTimer()
+{
+    if (!m_channelName.isEmpty()) {
+        fetchChannelInfo(m_channelName);
     }
 } 

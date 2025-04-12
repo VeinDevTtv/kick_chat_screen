@@ -33,6 +33,7 @@ private slots:
     void onError(QAbstractSocket::SocketError error);
     void onChannelInfoReceived(QNetworkReply* reply);
     void onPingTimerTimeout();
+    void onReconnectTimer();
 
 private:
     QWebSocket m_webSocket;
@@ -40,10 +41,14 @@ private:
     QString m_channelName;
     QString m_channelId;
     QTimer m_pingTimer;
+    QTimer m_reconnectTimer;
+    int m_reconnectAttempts;
+    int m_maxReconnectAttempts;
     
     void fetchChannelInfo(const QString& channelName);
     void connectWebSocket();
     void processMessage(const QJsonDocument& jsonDoc);
+    void startReconnectTimer();
 };
 
 #endif // KICKCHATCLIENT_H 
