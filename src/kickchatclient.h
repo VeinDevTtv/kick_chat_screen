@@ -31,7 +31,6 @@ private slots:
     void onDisconnected();
     void onTextMessageReceived(const QString& message);
     void onError(QAbstractSocket::SocketError error);
-    void onChannelInfoReceived(QNetworkReply* reply);
     void onPingTimerTimeout();
     void onReconnectTimer();
 
@@ -45,8 +44,7 @@ private:
     int m_reconnectAttempts;
     int m_maxReconnectAttempts;
     
-    void fetchChannelInfo(const QString& channelName);
-    void connectWebSocket();
+    void connectWebSocketDirect();
     void processMessage(const QJsonDocument& jsonDoc);
     void startReconnectTimer();
 };

@@ -43,7 +43,13 @@ void KickChatClient::connectToChannel(const QString& channelName)
     m_reconnectAttempts = 0;
     
     m_channelName = channelName;
-    fetchChannelInfo(channelName);
+    
+    // Try direct approach - use a direct WebSocket connection to Kick's chat service
+    qDebug() << "Attempting direct WebSocket connection for channel:" << channelName;
+    
+    // Directly connect to the chatroom without getting channel ID first
+    m_channelId = channelName; // Use the channel name directly
+    connectWebSocketDirect();
 }
 
 void KickChatClient::disconnectFromChannel()
@@ -64,131 +70,22 @@ bool KickChatClient::isConnected() const
     return m_webSocket.state() == QAbstractSocket::ConnectedState;
 }
 
-void KickChatClient::fetchChannelInfo(const QString& channelName)
+void KickChatClient::connectWebSocketDirect()
 {
-    // Build URL for Kick API request - try the newer API endpoint
-    QUrl url("https://kick.com/api/v2/channels/" + channelName);
-    QNetworkRequest request(url);
+    qDebug() << "Connecting to Kick WebSocket directly";
     
-    // Set a user agent to avoid potential blocks - use a more modern user agent
-    request.setHeader(QNetworkRequest::UserAgentHeader, 
-                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    // Connect directly to Kick's chat WebSocket server
+    QUrl url("wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.4.0");
     
-    // Add required headers 
-    request.setRawHeader("Accept", "application/json");
-    request.setRawHeader("Content-Type", "application/json");
-    
-    // Send the request
-    QNetworkReply* reply = m_networkManager.get(request);
-    connect(reply, &QNetworkReply::finished, [this, reply, channelName]() {
-        onChannelInfoReceived(reply);
-        
-        // If we get an error with v2, try v1 as fallback
-        if (reply->error() != QNetworkReply::NoError) {
-            QUrl url("https://kick.com/api/v1/channels/" + channelName);
-            QNetworkRequest request(url);
-            request.setHeader(QNetworkRequest::UserAgentHeader, 
-                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            request.setRawHeader("Accept", "application/json");
-            request.setRawHeader("Content-Type", "application/json");
-            
-            QNetworkReply* fallbackReply = m_networkManager.get(request);
-            connect(fallbackReply, &QNetworkReply::finished, [this, fallbackReply]() {
-                onChannelInfoReceived(fallbackReply);
-            });
-        }
-    });
-}
-
-void KickChatClient::onChannelInfoReceived(QNetworkReply* reply)
-{
-    // Store the reply data before deleteLater
-    QByteArray data = reply->readAll();
-    QNetworkReply::NetworkError errorCode = reply->error();
-    QString errorString = reply->errorString();
-    
-    // Clean up the reply
-    reply->deleteLater();
-    
-    if (errorCode != QNetworkReply::NoError) {
-        emit error("Failed to get channel info: " + errorString);
-        
-        // Print the error response for debugging
-        qDebug() << "Error response: " << data;
-        
-        // We'll let the retry happen in the fetchChannelInfo function
-        return;
-    }
-    
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
-    
-    if (parseError.error != QJsonParseError::NoError) {
-        emit error("Failed to parse channel data: " + parseError.errorString());
-        qDebug() << "Raw response: " << data;
-        startReconnectTimer();
-        return;
-    }
-    
-    QJsonObject channelInfo = doc.object();
-    
-    // Try to find the channel ID - handle different API response formats
-    QString channelId;
-    
-    if (channelInfo.contains("id")) {
-        // V1 API format
-        channelId = QString::number(channelInfo["id"].toInt());
-    } 
-    else if (channelInfo.contains("channel") && channelInfo["channel"].isObject()) {
-        // V2 API format
-        QJsonObject channel = channelInfo["channel"].toObject();
-        if (channel.contains("id")) {
-            channelId = QString::number(channel["id"].toInt());
-        }
-    }
-    else if (channelInfo.contains("data") && channelInfo["data"].isObject()) {
-        // Alternative API format
-        QJsonObject data = channelInfo["data"].toObject();
-        if (data.contains("id")) {
-            channelId = QString::number(data["id"].toInt());
-        }
-        else if (data.contains("channel_id")) {
-            channelId = QString::number(data["channel_id"].toInt());
-        }
-    }
-    
-    if (!channelId.isEmpty()) {
-        m_channelId = channelId;
-        connectWebSocket();
-    } else {
-        emit error("Failed to get channel ID: Invalid channel data format");
-        qDebug() << "Response without ID: " << data;
-        startReconnectTimer();
-    }
-}
-
-void KickChatClient::connectWebSocket()
-{
-    // Kick.com uses PusherJS for WebSockets
-    QString appKey = "eb1d5f283081a78b932c";
-    QString cluster = "us2";
-    
-    QUrl url;
-    url.setScheme("wss");
-    url.setHost(QString("%1.pusher.com").arg(cluster));
-    url.setPath("/app/" + appKey);
-    
-    QUrlQuery query;
-    query.addQueryItem("protocol", "7");
-    query.addQueryItem("client", "js");
-    query.addQueryItem("version", "7.4.0");
-    url.setQuery(query);
+    qDebug() << "WebSocket URL:" << url.toString();
     
     m_webSocket.open(url);
 }
 
 void KickChatClient::onConnected()
 {
+    qDebug() << "WebSocket connected";
+    
     // Reset reconnect counter on successful connection
     m_reconnectAttempts = 0;
     m_reconnectTimer.stop();
@@ -198,10 +95,13 @@ void KickChatClient::onConnected()
     subscribeMsg["event"] = "pusher:subscribe";
     
     QJsonObject data;
-    data["channel"] = QString("chatrooms.%1.v2").arg(m_channelId);
+    data["channel"] = QString("chatrooms.%1.v2").arg(m_channelName);
     subscribeMsg["data"] = data;
     
-    m_webSocket.sendTextMessage(QJsonDocument(subscribeMsg).toJson(QJsonDocument::Compact));
+    QString message = QJsonDocument(subscribeMsg).toJson(QJsonDocument::Compact);
+    qDebug() << "Sending subscription message:" << message;
+    
+    m_webSocket.sendTextMessage(message);
     
     // Start the ping timer to keep the connection alive
     m_pingTimer.start();
@@ -211,6 +111,7 @@ void KickChatClient::onConnected()
 
 void KickChatClient::onDisconnected()
 {
+    qDebug() << "WebSocket disconnected";
     m_pingTimer.stop();
     emit disconnected();
     
@@ -222,8 +123,11 @@ void KickChatClient::onDisconnected()
 
 void KickChatClient::onTextMessageReceived(const QString& message)
 {
+    qDebug() << "Received WebSocket message:" << message.left(200) + (message.length() > 200 ? "..." : "");
+    
     QJsonDocument jsonDoc = QJsonDocument::fromJson(message.toUtf8());
     if (!jsonDoc.isObject()) {
+        qDebug() << "Received non-object JSON";
         return;
     }
     
@@ -235,13 +139,20 @@ void KickChatClient::processMessage(const QJsonDocument& jsonDoc)
     QJsonObject messageObj = jsonDoc.object();
     QString eventName = messageObj["event"].toString();
     
+    qDebug() << "Received event:" << eventName;
+    
     // Handle chat messages
     if (eventName == "App\\Events\\ChatMessageEvent") {
-        QJsonObject dataObj = QJsonDocument::fromJson(messageObj["data"].toString().toUtf8()).object();
+        QString dataStr = messageObj["data"].toString();
+        qDebug() << "Chat message data:" << dataStr.left(200) + (dataStr.length() > 200 ? "..." : "");
+        
+        QJsonObject dataObj = QJsonDocument::fromJson(dataStr.toUtf8()).object();
         QJsonObject messageData = dataObj["message"].toObject();
         
         QString username = messageData["sender"].toObject()["username"].toString();
         QString content = messageData["content"].toString();
+        
+        qDebug() << "Chat message from" << username << ":" << content;
         
         // Get color from the message if available, or generate a random one
         QColor userColor;
@@ -261,27 +172,41 @@ void KickChatClient::processMessage(const QJsonDocument& jsonDoc)
         ChatMessage chatMsg(username, content, userColor);
         emit messageReceived(chatMsg);
     }
+    else if (eventName == "pusher:connection_established") {
+        qDebug() << "Pusher connection established";
+        
+        // Subscribe to the channel chat after connection is established
+        QJsonObject subscribeMsg;
+        subscribeMsg["event"] = "pusher:subscribe";
+        
+        QJsonObject data;
+        data["channel"] = QString("chatrooms.%1.v2").arg(m_channelName);
+        subscribeMsg["data"] = data;
+        
+        QString message = QJsonDocument(subscribeMsg).toJson(QJsonDocument::Compact);
+        qDebug() << "Sending subscription message:" << message;
+        
+        m_webSocket.sendTextMessage(message);
+    }
+    else if (eventName == "pusher_internal:subscription_succeeded") {
+        qDebug() << "Successfully subscribed to chat channel";
+    }
+    else if (eventName == "pusher:error") {
+        QJsonObject data = messageObj["data"].toObject();
+        QString errorMessage = data["message"].toString();
+        qDebug() << "Pusher error:" << errorMessage;
+        emit error("Pusher error: " + errorMessage);
+    }
 }
 
 void KickChatClient::onError(QAbstractSocket::SocketError error)
 {
+    qDebug() << "WebSocket error:" << m_webSocket.errorString();
     emit this->error("WebSocket error: " + m_webSocket.errorString());
     
     // Try to reconnect after an error
     if (!m_channelName.isEmpty()) {
         startReconnectTimer();
-    }
-}
-
-void KickChatClient::onPingTimerTimeout()
-{
-    // Send a ping to keep the connection alive
-    if (m_webSocket.state() == QAbstractSocket::ConnectedState) {
-        QJsonObject pingMsg;
-        pingMsg["event"] = "pusher:ping";
-        pingMsg["data"] = QJsonObject();
-        
-        m_webSocket.sendTextMessage(QJsonDocument(pingMsg).toJson(QJsonDocument::Compact));
     }
 }
 
@@ -304,7 +229,23 @@ void KickChatClient::startReconnectTimer()
 
 void KickChatClient::onReconnectTimer()
 {
+    qDebug() << "Attempting to reconnect";
     if (!m_channelName.isEmpty()) {
-        fetchChannelInfo(m_channelName);
+        connectWebSocketDirect();
+    }
+}
+
+void KickChatClient::onPingTimerTimeout()
+{
+    // Send a ping to keep the connection alive
+    if (m_webSocket.state() == QAbstractSocket::ConnectedState) {
+        QJsonObject pingMsg;
+        pingMsg["event"] = "pusher:ping";
+        pingMsg["data"] = QJsonObject();
+        
+        QString message = QJsonDocument(pingMsg).toJson(QJsonDocument::Compact);
+        qDebug() << "Sending ping";
+        
+        m_webSocket.sendTextMessage(message);
     }
 } 
