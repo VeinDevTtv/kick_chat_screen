@@ -15,8 +15,7 @@ KickChatClient::KickChatClient(QObject* parent)
     connect(&m_webSocket, &QWebSocket::connected, this, &KickChatClient::onConnected);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &KickChatClient::onDisconnected);
     connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &KickChatClient::onTextMessageReceived);
-    connect(&m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
-            this, &KickChatClient::onError);
+    connect(&m_webSocket, &QWebSocket::errorOccurred, this, &KickChatClient::onError);
     
     // Setup ping timer for keeping connection alive
     connect(&m_pingTimer, &QTimer::timeout, this, &KickChatClient::onPingTimerTimeout);

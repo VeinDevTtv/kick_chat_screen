@@ -32,8 +32,8 @@ ChatOverlay::ChatOverlay(QWidget* parent)
     , m_positionLocked(false)
     , m_toggleVisibilityShortcut(nullptr)
     , m_lockPositionShortcut(nullptr)
-    , m_toggleVisibilitySequence(Qt::CTRL + Qt::Key_F10)
-    , m_lockPositionSequence(Qt::CTRL + Qt::Key_F11)
+    , m_toggleVisibilitySequence(Qt::CTRL | Qt::Key_F10)
+    , m_lockPositionSequence(Qt::CTRL | Qt::Key_F11)
     , m_connectAction(nullptr)
     , m_disconnectAction(nullptr)
     , m_bgColorAction(nullptr)
@@ -395,7 +395,7 @@ void ChatOverlay::disconnectFromChannel()
 
 void ChatOverlay::onConnected()
 {
-    ui->statusLabel->setText(tr("Connected to %1").arg(m_channelName));
+    ui->statusLabel->setText(tr("Connected"));
 }
 
 void ChatOverlay::onDisconnected()
