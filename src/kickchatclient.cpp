@@ -74,9 +74,8 @@ void KickChatClient::connectWebSocketDirect()
 {
     qDebug() << "Connecting to Kick WebSocket directly";
     
-    // Try connecting directly to Kick's WebSocket server
-    // Recent information suggests Kick uses a different app key
-    QUrl url("wss://ws.pusherapp.com/app/4c173a9853be5f26bde9?protocol=7&client=js&version=7.4.0");
+    // Connect to Kick's WebSocket server with the mt1 cluster explicitly specified
+    QUrl url("wss://ws-mt1.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=js&version=7.4.0&cluster=mt1");
     
     qDebug() << "WebSocket URL:" << url.toString();
     
