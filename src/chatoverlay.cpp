@@ -338,6 +338,18 @@ void ChatOverlay::recycleMessageLabel(QLabel* label)
     }
 }
 
+// Add this function to escape HTML characters
+QString escapeHtml(const QString& input)
+{
+    QString escaped = input;
+    escaped.replace("&", "&amp;");
+    escaped.replace("<", "&lt;");
+    escaped.replace(">", "&gt;");
+    escaped.replace("\"", "&quot;");
+    escaped.replace("'", "&#39;");
+    return escaped;
+}
+
 void ChatOverlay::updateDisplay()
 {
     // Store widgets to recycle
@@ -357,9 +369,12 @@ void ChatOverlay::updateDisplay()
     for (const ChatMessage& msg : m_messages) {
         QLabel* messageLabel = getMessageLabel();
         
-        // Format text with HTML
+        // Format text with HTML (escape user content to prevent XSS)
         QString formattedMessage = QString("<span style='color: %1; font-weight: bold;'>%2:</span> <span style='color: %3;'>%4</span>")
-            .arg(msg.usernameColor().name(), msg.username(), m_textColor.name(), msg.message());
+            .arg(msg.usernameColor().name(), 
+                 escapeHtml(msg.username()), 
+                 m_textColor.name(), 
+                 escapeHtml(msg.message()));
         
         messageLabel->setText(formattedMessage);
         messageLabel->setTextFormat(Qt::RichText);
