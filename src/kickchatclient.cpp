@@ -5,6 +5,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QRandomGenerator>
+#include <QDebug>
 
 KickChatClient::KickChatClient(QObject* parent)
     : QObject(parent)
@@ -65,41 +66,103 @@ bool KickChatClient::isConnected() const
 
 void KickChatClient::fetchChannelInfo(const QString& channelName)
 {
-    // Build URL for Kick API request
-    QUrl url("https://kick.com/api/v1/channels/" + channelName);
+    // Build URL for Kick API request - try the newer API endpoint
+    QUrl url("https://kick.com/api/v2/channels/" + channelName);
     QNetworkRequest request(url);
     
-    // Set a user agent to avoid potential blocks
+    // Set a user agent to avoid potential blocks - use a more modern user agent
     request.setHeader(QNetworkRequest::UserAgentHeader, 
-                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    
+    // Add required headers 
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Content-Type", "application/json");
     
     // Send the request
     QNetworkReply* reply = m_networkManager.get(request);
-    connect(reply, &QNetworkReply::finished, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, [this, reply, channelName]() {
         onChannelInfoReceived(reply);
+        
+        // If we get an error with v2, try v1 as fallback
+        if (reply->error() != QNetworkReply::NoError) {
+            QUrl url("https://kick.com/api/v1/channels/" + channelName);
+            QNetworkRequest request(url);
+            request.setHeader(QNetworkRequest::UserAgentHeader, 
+                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            request.setRawHeader("Accept", "application/json");
+            request.setRawHeader("Content-Type", "application/json");
+            
+            QNetworkReply* fallbackReply = m_networkManager.get(request);
+            connect(fallbackReply, &QNetworkReply::finished, [this, fallbackReply]() {
+                onChannelInfoReceived(fallbackReply);
+            });
+        }
     });
 }
 
 void KickChatClient::onChannelInfoReceived(QNetworkReply* reply)
 {
+    // Store the reply data before deleteLater
+    QByteArray data = reply->readAll();
+    QNetworkReply::NetworkError errorCode = reply->error();
+    QString errorString = reply->errorString();
+    
+    // Clean up the reply
     reply->deleteLater();
     
-    if (reply->error() != QNetworkReply::NoError) {
-        emit error("Failed to get channel info: " + reply->errorString());
+    if (errorCode != QNetworkReply::NoError) {
+        emit error("Failed to get channel info: " + errorString);
+        
+        // Print the error response for debugging
+        qDebug() << "Error response: " << data;
+        
+        // We'll let the retry happen in the fetchChannelInfo function
+        return;
+    }
+    
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+    
+    if (parseError.error != QJsonParseError::NoError) {
+        emit error("Failed to parse channel data: " + parseError.errorString());
+        qDebug() << "Raw response: " << data;
         startReconnectTimer();
         return;
     }
     
-    QByteArray data = reply->readAll();
-    QJsonDocument doc = QJsonDocument::fromJson(data);
     QJsonObject channelInfo = doc.object();
     
-    // Extract the channel ID
+    // Try to find the channel ID - handle different API response formats
+    QString channelId;
+    
     if (channelInfo.contains("id")) {
-        m_channelId = QString::number(channelInfo["id"].toInt());
+        // V1 API format
+        channelId = QString::number(channelInfo["id"].toInt());
+    } 
+    else if (channelInfo.contains("channel") && channelInfo["channel"].isObject()) {
+        // V2 API format
+        QJsonObject channel = channelInfo["channel"].toObject();
+        if (channel.contains("id")) {
+            channelId = QString::number(channel["id"].toInt());
+        }
+    }
+    else if (channelInfo.contains("data") && channelInfo["data"].isObject()) {
+        // Alternative API format
+        QJsonObject data = channelInfo["data"].toObject();
+        if (data.contains("id")) {
+            channelId = QString::number(data["id"].toInt());
+        }
+        else if (data.contains("channel_id")) {
+            channelId = QString::number(data["channel_id"].toInt());
+        }
+    }
+    
+    if (!channelId.isEmpty()) {
+        m_channelId = channelId;
         connectWebSocket();
     } else {
-        emit error("Failed to get channel ID: Invalid channel data");
+        emit error("Failed to get channel ID: Invalid channel data format");
+        qDebug() << "Response without ID: " << data;
         startReconnectTimer();
     }
 }
