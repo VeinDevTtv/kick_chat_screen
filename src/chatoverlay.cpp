@@ -677,4 +677,17 @@ void ChatOverlay::paintEvent(QPaintEvent* event)
     
     // Let Qt handle the widget painting
     QWidget::paintEvent(event);
+}
+
+void ChatOverlay::contextMenuEvent(QContextMenuEvent* event)
+{
+    // We're handling the context menu ourselves with customContextMenuRequested signal
+    // so we'll just accept the event
+    event->accept();
+}
+
+bool ChatOverlay::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
+{
+    // Just pass to base class for default handling
+    return QWidget::nativeEvent(eventType, message, result);
 } 
